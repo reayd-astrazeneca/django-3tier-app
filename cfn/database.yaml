@@ -1,0 +1,76 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: Creates a Postgres Database and secret username and password, with enhanced monitoring.
+Parameters:
+
+  DBName:
+    Type: String
+
+  DBUser:
+    Type: String
+
+Resources:
+
+  RDSSecret:
+    Type: "AWS::SecretsManager::Secret"
+    Properties:
+      Description: "This is a Secrets Manager secret for an RDS DB instance"
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"username": "${DBUser}"}'
+        GenerateStringKey: "password"
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+        ExcludePunctuation: true
+
+  SecretRDSInstanceAttachment:
+    Type: "AWS::SecretsManager::SecretTargetAttachment"
+    Properties:
+      SecretId: !Ref RDSSecret
+      TargetId: !Ref DBInstance
+      TargetType: AWS::RDS::DBInstance
+
+  DBInstance:
+    DeletionPolicy: Delete
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBName: !Ref DBName
+      DBInstanceClass: "db.t3.micro"
+      AllocatedStorage: 5
+      StorageType: standard
+      Engine: postgres
+      MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref RDSSecret, ':SecretString:username}}' ]]
+      MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref RDSSecret, ':SecretString:password}}' ]]
+      MonitoringInterval: '60'
+      MonitoringRoleArn: !GetAtt MonitoringRole.Arn
+      PubliclyAccessible: false
+      DeleteAutomatedBackups: true
+
+  MonitoringRole:
+      Type: 'AWS::IAM::Role'
+      Properties:
+        AssumeRolePolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Principal:
+                Service:
+                  - 'monitoring.rds.amazonaws.com'
+              Action:
+                - 'sts:AssumeRole'
+        Path: /
+        ManagedPolicyArns:
+          - "arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole"
+
+Outputs:
+
+  EndpointAddress:
+    Description: The connection endpoint for the database.
+    Value: !GetAtt [ DBInstance, Endpoint.Address ]
+
+  EndpointPort:
+    Description: The port number on which the database accepts connections.
+    Value: !GetAtt [ DBInstance, Endpoint.Port ]
+
+  RDSSecret:
+    Description: The ARN of the RDS secret containing the username and password.
+    Value: !Ref RDSSecret
