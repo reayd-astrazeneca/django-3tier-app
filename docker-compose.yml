@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: ./app
+    restart: always
+    volumes:
+      - static-data:/vol/web
+    environment:
+      - APP_PORT=8000
+      - SECRET_KEY=devsecretkey
+      - DEBUG=1
+      - DB_HOST=db
+      - DB_NAME=devdb
+      - DB_USER=devuser
+      - DB_PASS=changeme
+      - ALLOWED_HOSTS="localhost"
+    depends_on:
+      - db
+  db:
+    image: postgres:13-alpine
+    restart: always
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=devdb
+      - POSTGRES_USER=devuser
+      - POSTGRES_PASSWORD=changeme
+
+  proxy:
+    build:
+      context: ./proxy
+    restart: always
+    depends_on:
+      - app
+    ports:
+      - 80:80
+    volumes:
+      - static-data:/vol/static
+    environment:
+      - APP_PORT=8000
+      - LISTEN_PORT=80
+      - APP_HOST=app
+volumes:
+  postgres-data:
+  static-data:

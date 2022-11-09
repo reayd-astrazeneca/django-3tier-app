@@ -1,0 +1,320 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: >
+  AWSBot CloudFormation Template Continuous Delivery: This template
+  builds an AWS CodePipeline pipeline that implements a continuous delivery release
+  process for AWS CloudFormation stacks.
+
+Parameters:
+
+  RepositoryName:
+    Description: Name of the CodeCommit repository
+    Type: String
+    Default: "django3tierapp"
+  StackName:
+    Description: Name of the CloudFormation Stack to update/create
+    Type: String
+    Default: "django3tierapp"
+  WebServiceName:
+    Type: String
+    Default: "web"
+  ClusterName:
+    Type: String
+    Default: "django3tierapp"
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "CodeBuild Settings"
+        Parameters:
+          - RepositoryName
+
+Mappings:
+  RegionMap:
+    eu-west-1:
+      ArtifactStoreBucket: codepipeline-eu-west-1-870076629780
+
+Resources:
+
+  CodeCommitRepo:
+    Type: AWS::CodeCommit::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      RepositoryPolicyText:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowPushPull
+            Effect: Allow
+            Principal:
+              AWS:
+                - !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "ecr:GetDownloadUrlForLayer"
+              - "ecr:BatchGetImage"
+              - "ecr:BatchCheckLayerAvailability"
+              - "ecr:PutImage"
+              - "ecr:InitiateLayerUpload"
+              - "ecr:UploadLayerPart"
+              - "ecr:CompleteLayerUpload"
+
+  CodePipelineRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codepipeline.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: CodePipelinePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "codecommit:*"
+                  - "s3:*"
+                  - "ecs:*"
+                  - "codebuild:StartBuild"
+                  - "codebuild:BatchGetBuilds"
+                  - "cloudformation:CreateStack"
+                  - "cloudformation:DescribeStacks"
+                  - "cloudformation:DeleteStack"
+                  - "cloudformation:UpdateStack"
+                  - "cloudformation:CreateChangeSet"
+                  - "cloudformation:ExecuteChangeSet"
+                  - "cloudformation:DeleteChangeSet"
+                  - "cloudformation:DescribeChangeSet"
+                  - "cloudformation:SetStackPolicy"
+                  - "iam:PassRole"
+                  - "sns:Publish"
+                Resource: '*'
+
+  CodePipelineBuildRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - codebuild.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: CodeCommitPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "codecommit:*"
+                Resource: '*'
+        - PolicyName: CloudWatchLogsPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "logs:CreateLogGroup"
+                  - "logs:CreateLogStream"
+                  - "logs:PutLogEvents"
+                Resource: '*'
+        - PolicyName: S3Policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                  - "s3:GetObject"
+                  - "s3:GetObjectVersion"
+                  - "s3:List*"
+                  - "s3:DeleteObject"
+                Resource: '*'
+        - PolicyName: LambdaPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "lambda:UpdateFunctionCode"
+                Resource: "*"
+        - PolicyName: ECRPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "ecr:*"
+                Resource: "*"
+        - PolicyName: CloudFront
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "cloudfront:CreateInvalidation"
+                Resource: "*"
+
+  CodePipelineCFNRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - cloudformation.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      Policies:
+        - PolicyName: CodePipelineCFNPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - "iam:CreateRole"
+                  - "iam:DeleteRole"
+                  - "iam:PutRolePolicy"
+                  - "iam:DeleteRolePolicy"
+                  - "iam:AttachRolePolicy"
+                  - "iam:PassRole"
+                  - "iam:GetRole"
+                  - "iam:DetachRolePolicy"
+                  - "iam:*InstanceProfile"
+                  - "lambda:*"
+                  - "sns:ListTopics"
+                  - "sns:CreateTopic"
+                  - "sns:DeleteTopic"
+                  - "sns:GetTopicAttributes"
+                  - "sns:SetTopicAttributes"
+                  - "sns:Subscribe"
+                  - "s3:*"
+                  - "events:*"
+                  - "glue:*"
+                  - "ecs:*"
+                  - "ec2:*"
+                  - "elasticloadbalancing:*"
+                  - "route53:*"
+                  - "autoscaling:*"
+                  - "cloudfront:*"
+                  - "cloudformation:*"
+                  - "apigateway:*"
+                  - "secretsmanager:*"
+                  - "rds:*"
+                Resource: '*'
+
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      ArtifactStore:
+        Location: !FindInMap [ RegionMap, !Ref 'AWS::Region', ArtifactStoreBucket ]
+        Type: S3
+      DisableInboundStageTransitions: []
+      Name: !Ref RepositoryName
+      RoleArn: !GetAtt CodePipelineRole.Arn
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: Source
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeCommit
+                Version: '1'
+              Configuration:
+                RepositoryName: !Ref RepositoryName
+                BranchName: master
+              OutputArtifacts:
+                - Name: Source
+              RunOrder: '1'
+        - Name: Build
+          Actions:
+            - Name: Build
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref StackName
+                EnvironmentVariables: !Sub |
+                  [ 
+                      {
+                        "name": "ECR_REPO",
+                        "value": "${ECRRepository.RepositoryUri}",
+                        "type":"PLAINTEXT"
+                      }
+                  ]
+              InputArtifacts:
+                - Name: Source
+              OutputArtifacts:
+                - Name: Build
+              RunOrder: '1'
+        - Name: CloudFormation
+          Actions:
+            - Name: Deploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CloudFormation
+                Version: '1'
+              InputArtifacts:
+                - Name: Build
+              Configuration:
+                ActionMode: CREATE_UPDATE
+                Capabilities: CAPABILITY_IAM,CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                RoleArn: !GetAtt CodePipelineCFNRole.Arn
+                StackName:
+                  Ref: StackName
+                TemplatePath: Build::template.yaml
+              RunOrder: '1'
+        - Name: ECS
+          Actions:
+            - Name: DeployWeb
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: ECS
+                Version: '1'
+              RunOrder: 2
+              Configuration:
+                ClusterName: !Ref ClusterName
+                ServiceName: !Ref WebServiceName
+                FileName: imagedefinitions.web.json
+                DeploymentTimeout: '15'
+              InputArtifacts:
+                - Name: Build
+
+  CodeBuild:
+    Type: "AWS::CodeBuild::Project"
+    Properties:
+      Name: !Ref StackName
+      Artifacts:
+        Type: CODEPIPELINE
+      Source:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        Image: "aws/codebuild/amazonlinux2-x86_64-standard:3.0"
+        PrivilegedMode: true
+      ServiceRole: !Ref CodePipelineBuildRole
+      TimeoutInMinutes: '5'

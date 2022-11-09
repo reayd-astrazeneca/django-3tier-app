@@ -1,0 +1,33 @@
+AWSTemplateFormatVersion: 2010-09-09
+Transform: AWS::Serverless-2016-10-31
+Description: Creates a Content distribution network and s3 bucket website as the origin
+
+Parameters:
+
+  DomainName:
+    Type: String
+
+Resources:
+
+  CloudFrontDistribution:
+    Type: 'AWS::CloudFront::Distribution'
+    Properties:
+      DistributionConfig:
+        DefaultCacheBehavior:
+          ForwardedValues:
+            QueryString: 'false'
+            Cookies:
+              Forward: none
+          TargetOriginId: ALBOrigin
+          ViewerProtocolPolicy: redirect-to-https
+        Enabled: 'true'
+        Origins:
+          - Id: ALBOrigin
+            DomainName: !Ref DomainName
+            CustomOriginConfig:
+              HTTPPort: 80
+              OriginProtocolPolicy: http-only
+Outputs:
+  DomainName:
+    Description: The DomainName of the CloudFront Distribution
+    Value: !GetAtt CloudFrontDistribution.DomainName
